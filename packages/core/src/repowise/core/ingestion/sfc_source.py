@@ -464,11 +464,13 @@ def _razor_byte_scan(source: bytes, state: dict) -> None:
       must be alphabetic or ``{`` for the sigil to count.
     * ``@* ... *@`` comments are skipped by both passes. Commented-out code
       compiles to nothing, so a block or tag inside one would be a wrong edge.
+    * Event-handler attributes whose value is a single bare identifier
+      (``Click="@Save"``, ``@onclick="Save"``) are recorded as references to
+      that method.
     * ``@using X`` directives are NOT projected (Razor drops the trailing
       ``;``, which the C# grammar needs; the projection would have to
-      rewrite bytes to satisfy it). The ``@inject`` / ``@bind`` /
-      ``@on*`` attribute-value forms are two-way bindings, not call edges,
-      the same posture as Svelte's ``{#each}`` heads and Vue's ``v-for``.
+      rewrite bytes to satisfy it). ``@inject`` / ``@bind`` forms are
+      bindings, not call edges, the same posture as Svelte's ``{#each}`` heads and Vue's ``v-for``.
     """
     comments: list[tuple[int, int]] = []
 
@@ -557,7 +559,29 @@ def _razor_byte_scan(source: bytes, state: dict) -> None:
     # Skip any ``<`` inside a C# region or a Razor comment: ``List<Order>`` is
     # a generic type argument, ``a < b`` is a comparison, and a commented-out
     # tag renders nothing. HTML comments are jumped over for the same reason.
-    _byte_scan_tags(source, [*state["spans"], *comments], _razor_component_name, state)
+    hidden = [*state["spans"], *comments]
+    _byte_scan_tags(source, hidden, _razor_component_name, state)
+    _razor_handler_refs(source, hidden, state)
+
+
+# ``Click="@SaveOrders"`` / ``@onclick="HandleClick"``: an attribute whose whole
+# value is one bare identifier is a method group (a delegate reference), which
+# Blazor invokes on the event. Only ``@on*`` directives and conventional
+# event-callback parameter names qualify: ``Value="@Name"`` is a property read. Lambdas and call expressions (``@(() => X())``,
+# ``Foo(1)``) are left alone.
+_RAZOR_HANDLER_ATTR = re.compile(
+    rb"""(?<![\w:.@-])(?:@on[a-z]+|(?:On[A-Z]\w*|Click|DoubleClick|Change|Submit|Select|Close|Open))"""
+    rb"""\s*=\s*["']\s*@?([A-Za-z_]\w*)\s*["']"""
+)
+
+
+def _razor_handler_refs(source: bytes, hidden: list[tuple[int, int]], state: dict) -> None:
+    """Record bare-identifier handler attributes as references from the component."""
+    for match in _RAZOR_HANDLER_ATTR.finditer(source):
+        if any(start <= match.start() < end for start, end in hidden):
+            continue
+        name = match.group(1).decode("utf-8")
+        state["tags"].append((name, source.count(b"\n", 0, match.start(1)) + 1))
 
 
 _MARKUP_TAG = re.compile(rb"<(?:!--|([\w.]+))")

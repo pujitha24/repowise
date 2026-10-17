@@ -110,15 +110,22 @@ class TestCalls:
         assert grid.caller_symbol_id is not None
         assert grid.caller_symbol_id.endswith("::Orders")
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="attribute-bound handlers (Click=\"@SaveOrders\") are not projected yet",
-    )
     def test_attribute_bound_handler_carries_an_edge(self, parsed) -> None:
         # ``Click="@SaveOrders"`` is the only reference to SaveOrders in the
         # component. Until attribute expressions are projected it reads as
-        # unreferenced; this turns green when they are.
+        # unreferenced.
         assert "SaveOrders" in {c.target_name for c in parsed.calls}
+
+    def test_onclick_directive_handler_and_non_handlers(self, parser) -> None:
+        src = b"""<button @onclick="HandleClick">a</button>
+<button @onclick="@(() => Other())">b</button>
+<input class="btn" Title="Plain" Value="@Name" class2="@css" />
+<a @onclick:preventDefault="true" @bind="@Bound">c</a>
+@* <button Click="@Commented" /> *@
+"""
+        targets = {c.target_name for c in parser.parse_file(_file(), src).calls}
+        assert "HandleClick" in targets
+        assert not {"Other", "btn", "Plain", "Name", "css", "true", "Bound", "Commented"} & targets
 
 
 class TestCshtml:
