@@ -19,8 +19,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-import pytest
-
 from repowise.core.ingestion.call_resolver import CallResolver
 from repowise.core.ingestion.models import FileInfo, ParsedFile
 from repowise.core.ingestion.parser import parse_file
@@ -204,12 +202,6 @@ class TestOverloadSetIsOneSymbol:
             f"the inherited tier must keep this site, not the global rung; edges: {edges}"
         )
 
-    @pytest.mark.xfail(
-        reason="_NON_CALLABLE_KINDS is {'property'} while C# extracts a field "
-        "or property as kind 'variable', so the data-member refusal never "
-        "reaches C#. Pre-existing, and unchanged by this collapse.",
-        strict=True,
-    )
     def test_a_non_callable_symbol_is_still_refused(self, tmp_path: Path) -> None:
         parsed = _parse_all(
             tmp_path,
